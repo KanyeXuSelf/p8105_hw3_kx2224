@@ -57,8 +57,8 @@ ny_noaa_cleaned = ny_noaa |>
 ```
 
 ```{r}
-snow_common <- ny_noaa_cleaned %>%
-  count(snow_mm) %>%
+snow_common = ny_noaa_cleaned |>
+  count(snow_mm) |>
   arrange(desc(n))
 
 snow_common
@@ -67,9 +67,9 @@ For snowfall, the most commonly observed values is 0. It is because almost days 
 
 ### Plot
 ```{r}
-jan_jul_tmax <- ny_noaa_cleaned %>%
-  filter(month %in% c(1, 7)) %>%
-  group_by(id, year, month) %>%
+jan_jul_tmax = ny_noaa_cleaned |>
+  filter(month %in% c(1, 7)) |>
+  group_by(id, year, month) |>
   summarize(avg_tmax = mean(tmax_c, na.rm = TRUE))
 
 ggplot(jan_jul_tmax, aes(x = year, y = avg_tmax, color = as.factor(month))) +
@@ -83,7 +83,7 @@ There appears to be some variability in the average maximum temperatures across 
 
 ### Plot -2
 ```{r}
-tmax_tmin_plot <- ggplot(ny_noaa_cleaned, aes(x = tmin_c, y = tmax_c)) +
+tmax_tmin_plot = ggplot(ny_noaa_cleaned, aes(x = tmin_c, y = tmax_c)) +
   geom_point(alpha = 0.3) +
   labs(title = "Tmax vs Tmin",
        x = "Min Temperature (°C)", y = "Max Temperature (°C)") +
@@ -95,8 +95,8 @@ tmax_tmin_plot
 ```
 
 ```{r}
-snowfall_violin <- ny_noaa_cleaned %>%
-  filter(snow_mm > 0 & snow_mm < 100) %>%
+snowfall_violin = ny_noaa_cleaned |>
+  filter(snow_mm > 0 & snow_mm < 100) |>
   ggplot(aes(x = factor(year), y = snow_mm)) +
   geom_violin() +
   labs(title = "Distribution of Snowfall by Year (0 < Snowfall < 100 mm)",
@@ -187,8 +187,8 @@ ggplot(total_activity_data, aes(x = age, y = total_activity, color = sex)) +
 3. More than High School: Women maintain higher activity than men, especially between ages 50–60, though both sexes show a decline after 60.
 
 ```{r}
-time_course_data <- cleaned_data %>%
-  group_by(minute, sex, education) %>%
+time_course_data = cleaned_data |>
+  group_by(minute, sex, education) |>
   summarize(mean_activity = mean(acc, na.rm = TRUE))
 
 ### 24-hour activity time course plot
@@ -229,12 +229,138 @@ data_July_24 =
 ### Clean data
 
 ```{r}
+total_data = 
+  bind_rows(data_Jan_20,data_Jan_24,data_July_20,data_July_24)|>
+  distinct()|>
+  janitor::clean_names()|>
+  pivot_longer(start_station_name: end_station_name, names_to = "station_status", values_to = "station_name", names_pattern = "(start|end)_station_name")
+
+head(total_data)
+```
+### Data information summary
+```{r}
+bike_type = total_data|> pull(rideable_type)|> unique()
+most_weekdays = total_data|> count(weekdays)|> arrange(desc(n))
+avg_duration = total_data|> pull(duration)|> mean(na.rm = TRUE)
+num_member = total_data|> count(member_casual)
+bike_type
+most_weekdays
+avg_duration
+num_member
+```
+
+- So the combine data set contains `r nrow(total_data)/2` order information. This dataset concludes the information of each ride's duration, date, start station, end station, ride type and the ride weekdays.
+- The bike types contains `r bike_type`. The most busy weekdays to ride bike is `r most_weekdays[1, 1]`, and the number of orders is `r most_weekdays[1, 2]`. The average duration of ride is `r avg_duration`. The percentage of members is `r num_member[2, 2]/nrow(total_data)`.
+
+### Make table of total number of rides in each combination.
+```{r}
+total_rides_table = total_data |>
+  mutate(year = format(date, "%Y"), 
+         month = format(date, "%B")) |>
+  group_by(year, month, member_casual) |>
+  summarize(total_rides = n(), .groups = 'drop') |>
+  pivot_wider(names_from = member_casual, values_from = total_rides, values_fill = 0) |>
+  mutate(total_rides = member + casual,
+         member_proportion = member / total_rides) |>
+  arrange(year, match(month, month.name))
+
+# Display the table in a reader-friendly format
+library(knitr)
+kable(total_rides_table, caption = "Total Number of Rides and Member Rider Proportion by Year, Month, and Rider Type", digits = 2)
+
+```
+- Therefore, the number of riders will increase on summer both 2020 and 2024. Also the proportion of member riders will decreases on summer. From 2020 to 2024, the number of both kinds of riders increases a lot. 
+
+### make a table of 5 most popular starting stations
+```{r}
+top_stations_July_24 = total_data |>
+  filter(format(date, "%Y-%m") == "2024-07", station_status == "start") |>
+  count(station_name, sort = TRUE) |>
+  top_n(5, n)
+
+# Display the top 5 stations table
+kable(top_stations_July_24, caption = "Top 5 Most Popular Starting Stations for July 2024", col.names = c("Station Name", "Number of Rides"))
+```
+- The 5 most popular starting stations for July 2024 are: Pier 61 at Chelsea Piers: 163 rides; University Pl & E 14 St: 155 rides; W 21 St & 6 Ave: 152 rides; West St & Chambers St: 150 rides; W 31 St & 7 Ave: 146 rides.
+
+### Plot of the effect of day of the week
+```{r}
+### Prepare data for plotting median ride duration by day of the week, month, and year
+ride_duration_data = total_data |>
+  mutate(year = format(date, "%Y"),
+         month = format(date, "%B"),
+         weekdays = fct_relevel(weekdays, "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")) |>
+  group_by(year, month, weekdays) |>
+  summarize(median_duration = median(duration, na.rm = TRUE))
+ride_duration_data
+```
+
+```{r}
+ride_duration_plot = ggplot(ride_duration_data, aes(x = weekdays, y = median_duration, fill = year)) +
+  geom_bar(stat = 'identity', position = position_dodge()) +  # Bar plot with dodge position for months
+  facet_grid(. ~ month) +  # Separate panels for each year
+  labs(title = 'Effects of Day of the Week, Month, and Year on Median Ride Duration',
+       x = 'Day of the Week',
+       y = 'Median Ride Duration (minutes)',
+       fill = 'Year') +
+  theme_minimal() +  # Use a minimal theme for clean aesthetics
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Rotate X-axis labels for better readability
+
+# Display the plot
+ride_duration_plot
 
 ```
 
+- In 2020, the median ride duration appears to be consistently higher compared to 2024, particularly for the month of July. This could indicate a trend where people in 2020 took longer rides, possibly due to different social factors, infrastructure, or external conditions.
 
+- The weekend days (Saturday and Sunday) in both January and July tend to show higher median ride durations compared to weekdays. This suggests that people may be using the service for leisure activities on weekends, resulting in longer rides. During weekdays, the median ride durations are more uniform and shorter, especially in January for both years, which might reflect more commuter-based usage during the workweek.
 
+### Make a figure
+```{r}
+data_2024 = total_data |>
+  mutate(
+    month = format(date, "%B"),
+    year = format(date, "%Y")
+  )|>
+  filter(year == "2024")
+head(data_2024)
+```
+```{r}
+ride_duration_plot_2024 = 
+  ggplot(
+    data_2024, 
+    aes(x = month, y = duration, fill = member_casual)
+    ) + 
+  geom_violin(alpha = 0.7, scale = "width") +  
+  facet_grid(rideable_type ~ member_casual) +  
+  labs(
+    title = "Impact of Month, Membership Status, and Bike Type on Ride Duration (2024)",
+    x = "Month", 
+    y = "Ride Duration (Minutes)", 
+    fill = "Membership Status"
+    ) +
+  theme_minimal() +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
 
+ride_duration_plot_2024
+```
+
+1. Casual Riders vs. Members:
+
+  - Casual riders (shown in pink) tend to have much longer ride durations compared to members (shown in blue), especially for classic bikes. This suggests that casual riders might use bikes more for leisure or sightseeing, resulting in longer trips.
+Members, on the other hand, have consistently shorter and more uniform ride durations, indicating more utilitarian or commuting use, especially for electric bikes.
+
+2. Bike Type Impact:
+
+  - Electric bikes show generally shorter ride durations compared to classic bikes for both casual riders and members. This is likely because electric bikes are used for quicker, more efficient trips, particularly by members.
+
+  - Casual riders on classic bikes exhibit a much wider distribution in ride duration, with some very long rides, especially in July.
+
+3. Seasonal Differences (January vs. July):
+
+  - Ride durations are longer in July compared to January for casual riders, likely due to better weather conditions encouraging more leisurely and extended rides.
+
+  - For members, there is less seasonal variation in ride durations, suggesting that their riding patterns are more consistent throughout the year, likely due to commuting.
 
 
 
