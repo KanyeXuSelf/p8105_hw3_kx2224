@@ -89,7 +89,7 @@ tmax_tmin_plot <- ggplot(ny_noaa_cleaned, aes(x = tmin_c, y = tmax_c)) +
        x = "Min Temperature (°C)", y = "Max Temperature (°C)") +
   theme_minimal()
 
-# tmax_tmin_plot
+tmax_tmin_plot
 
 
 ```
